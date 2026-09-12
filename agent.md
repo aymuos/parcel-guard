@@ -16,11 +16,15 @@ The target environment contains real datasets located in the `./data/` folder:
   c. CATE tau(X): Rerouting to a locker saves -3.0 hours if hub_waiting_time_hrs > 1.5; saves -0.5 hours otherwise (Locker bypasses hub bottlenecks).
   d. Target Delay Y = 0.6 * hub_waiting_time + 3.0 * weather_severity + 2.5 * traffic_index + tau(X) * locker_rerouted + Noise(std=0.5).
 
-2. PREDICTIVE GUARD (Supervised SLA Breach Model)
-- Train a LightGBM/XGBoost regressor on processed snapshots to predict `projected_delay_hrs`.
-- Compute N-Hour Advance Detection Rate metric:
-  ADR_N = (Breaches detected >= N hours before promised_eta) / (Total actual breaches)
-  Target evaluation window: N = 6 hours.
+2. PREDICTIVE GUARD (Ensemble Quantile Model & Risk Engine)
+- Build a multi-model ensemble combining LightGBM and CatBoost:
+  a. CatBoost Regressor: Train on raw categorical features [carrier_id, priority_tier, origin_hub, destination_hub] alongside continuous telemetry.
+  b. LightGBM Quantile Regressors: Train three models with `objective='quantile'` at alpha levels [0.10, 0.50, 0.90] to predict lower, median, and upper delay bounds.
+  c. Meta-Ensemble: Combine median LightGBM (alpha=0.50) and CatBoost predictions using a weighted average stacking layer to produce `predicted_delay_hrs`.
+- Output Empirical Risk Intervals:
+  Assign `delay_lower_bound_hrs = q10_prediction` and `delay_upper_bound_hrs = q90_prediction`. Flag SLA breach risk if `delay_upper_bound_hrs > 0`.
+- Metric Evaluation:
+  Compute the N-Hour Advance Detection Rate (ADR_N) at N = 6 hours advance notice window across all snapshot timestamps.
 
 3. DIAGNOSTIC LAYER (XAI Root Cause)
 - Implement TreeSHAP over the LightGBM/XGBoost regressor.
@@ -73,48 +77,49 @@ Implement a FastAPI application with Pydantic request/response validation and an
   Returns a list of all active shipments projected to breach SLA with at least `min_lead_hours` notice.
 
 
-6. ADVANCED TECHNICAL & BUSINESS IMPACT ADDITIONS
-- Financial Optimization Layer:
-  Include business logic calculating financial metrics in GET /parcel/{tracking_id}/promise:
-  - sla_penalty_usd = priority_tier * $50
-  - reroute_cost_usd = $4.50
-  - net_dollars_saved = (sla_breach_predicted ? sla_penalty_usd : 0) - reroute_cost_usd
-- Conformal Prediction & Uncertainty:
-  Provide a 90% prediction interval [delay_lower_bound_hrs, delay_upper_bound_hrs] for predicted_delay_hrs.
-- DoWhy Causal Refutation:
-  Add a validation function `validate_causal_effect()` using DoWhy's `refute_estimate(method_name="placebo_treatment_refuter")` and log the refutation p-value to guarantee treatment effect robustness.
-- Governance & Safety:
-  If predicted_delay_hrs > 6.0 or priority_tier == 'VIP', set "approval_tier": "HUMAN_APPROVAL_REQUIRED" in the recommendation payload.
+6. ADVANCED CAUSAL, SURVIVAL & TECHNICAL DEPTH ADDITIONS
 
-7. AGENTIC AI & EXPANDED API SUITE
+- Causal Discovery & Structural Learning:
+  Implement `discover_causal_dag(df)` using `lingam.DirectLiNGAM` or `causal-learn` to empirically infer directed causal edges between telemetry variables [distance, weather, traffic, hub_waiting_time] and outcome [actual_delay]. Validate the inferred DAG against the DoWhy model definition.
 
-- AGENTIC ORCHESTRATOR LAYER:
-  Implement an autonomous decision agent (using LangGraph/Groq or standard Function Calling) provided with 3 system tools:
-  1. `tool_get_sla_risk(tracking_id)`
-  2. `tool_estimate_causal_remediation(tracking_id)`
-  3. `tool_execute_locker_reroute(tracking_id, locker_id)`
-  The agent must evaluate parcels, reason through business constraints (cost, priority tier, confidence interval), invoke rerouting tools autonomously if justified, and output step-by-step reasoning traces.
+- Survival Analysis for Lead-Time Probability:
+  Train a `lifelines.CoxPHFitter` or `RandomSurvivalForest` model on time-to-delivery data to estimate dynamic survival probability curves S(t) = P(Delay <= 0 | t_remaining). Compute exact P(Breach) at N = 2, 6, 12, 24 hours.
 
-- ADDITIONAL FASTAPI ENDPOINTS:
-  1. GET `/analytics/roi-dashboard`
-     Returns aggregate summary metrics:
-     {
-       "total_parcels_tracked": 5000,
-       "sla_breaches_predicted": 750,
-       "sla_breaches_prevented": 612,
-       "adr_6hr_percentage": 81.6,
-       "total_gross_penalties_saved_usd": 30600.00,
-       "net_roi_usd": 27846.00
-     }
+- Conformal Uncertainty Bounds (MAPIE):
+  Compute empirical 90% coverage prediction intervals [delay_lower_bound_hrs, delay_upper_bound_hrs] for predicted_delay_hrs using MAPIE or quantile residuals.
 
-  2. POST `/agent/autonomous-remediate`
-     Request: {"min_lead_hours": 6, "auto_execute_budget_limit_usd": 100.00}
-     Triggers the Agentic Orchestrator across all at-risk parcels and returns an agentic execution log.
+- DoWhy Multi-Method Refutation Suite:
+  Add a `validate_causal_robustness()` function executing 3 refutation tests:
+  1. Placebo Treatment Refuter
+  2. Random Common Cause Refuter
+  3. Data Subset Refuter
+  Log refutation p-values to prove treatment effect resilience against unobserved confounding.
 
-  3. GET `/parcel/{tracking_id}/customer-message`
-     Uses an LLM prompt template informed by SHAP root causes and DML locker updates to output a transparent customer SMS/Email notification.
+- Causal Policy Evaluation & AUUC (CausalML):
+  Plot and calculate the Area Under the Uplift Curve (AUUC) and Qini score comparing the DML policy against Random Rerouting and Naive Supervised Targeting.
 
-  4. POST `/simulation/stress-test`
-     Accepts parameters {"weather_spike": 0.8, "affected_region": "SOUTH"}, updates telemetry in real-time, and runs full batch SLA remediation.
+7. DETERMINISTIC OR ENGINE & EXPANDED FASTAPI SUITE
+
+- FLEET-WIDE CAPACITY OPTIMIZATION ENGINE (scipy.optimize / PuLP):
+  Implement `optimize_fleet_interventions(at_risk_parcels, locker_capacities)` using Binary Integer Linear Programming (ILP):
+  - Objective: Maximize total net dollars saved across all active parcels.
+  - Constraint 1: Parcel count per locker <= physical capacity.
+  - Constraint 2: Only trigger reroute if CATE estimated delay reduction >= 1.5 hours.
+
+- DETERMINISTIC FINANCIAL LOGIC:
+  In GET /parcel/{tracking_id}/promise:
+  - penalty_map = {"STANDARD": 25.0, "EXPRESS": 50.0, "VIP": 100.0}
+  - sla_penalty_usd = penalty_map.get(priority_tier, 50.0)
+  - reroute_cost_usd = 4.50
+  - net_dollars_saved = (sla_penalty_usd - reroute_cost_usd) if (sla_breach_predicted and estimated_hours_saved > 0) else 0.0
+
+- TEMPLATE-BASED DISPATCH & CUSTOMER NOTIFICATIONS:
+  Replace LLM text generation with structured, deterministic text rendering (Jinja2/f-strings) mapped directly to SHAP delay drivers (e.g., weather vs hub congestion) and locker dispatch confirmation codes.
+
+- EXPANDED FASTAPI ENDPOINTS:
+  1. GET `/analytics/roi-dashboard`: Aggregates fleet metrics (SLAs saved, AUUC metric, net dollars protected, 6-hour ADR %).
+  2. POST `/fleet/optimize-batch`: Runs Integer Linear Programming fleet optimization over all at-risk shipments and returns slot assignments.
+  3. GET `/parcel/{tracking_id}/customer-message`: Renders deterministic customer notification strings based on SHAP root causes.
+  4. POST `/simulation/stress-test`: Accepts {"weather_spike": 0.8, "affected_region": "SOUTH"}, mutates in-memory state, and triggers batch LP re-allocation.
 
 Organize the code into modular files (`data_engine.py`, `models.py`, `causal_engine.py`, `main.py`) or a clean single-file FastAPI script with inline comments explaining DML identification and SHAP logic.

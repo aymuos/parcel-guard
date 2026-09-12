@@ -3,6 +3,19 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 
+ORIGIN_HUBS = ["HUB_SP_01", "HUB_RJ_02", "HUB_MG_01", "HUB_PR_01"]
+DESTINATION_HUBS = ["HUB_SOUTH_01", "HUB_WEST_04", "HUB_NORTH_02", "HUB_EAST_01"]
+
+FEATURE_COLS = [
+    "distance_remaining_km",
+    "hub_waiting_time_hrs",
+    "weather_severity",
+    "traffic_index",
+    "locker_rerouted"
+]
+
+CATEGORICAL_COLS = ["carrier_id", "priority_tier", "origin_hub", "destination_hub"]
+
 def load_real_orders(dataco_path="data/DataCoSupplyChainDataset.csv", olist_path="data/Brazilian E-Commerce Public Dataset by Olist.csv", sample_size=5000):
     """
     Load real order timestamps, locations, and metadata from DataCo or Olist datasets.
@@ -72,6 +85,8 @@ def generate_micro_telemetry(n_samples=5000, random_state=42):
     
     carrier_ids = np.random.choice(["CARRIER_A", "CARRIER_B", "EXPRESS_EX"], size=n)
     priority_tiers = np.random.choice(["STANDARD", "EXPRESS", "VIP"], size=n)
+    origin_hubs = np.random.choice(ORIGIN_HUBS, size=n)
+    destination_hubs = np.random.choice(DESTINATION_HUBS, size=n)
     
     # Lead time until promised ETA (hrs)
     lead_time_hrs = np.random.uniform(2.0, 36.0, n)
@@ -95,7 +110,6 @@ def generate_micro_telemetry(n_samples=5000, random_state=42):
     tau = np.where(hub_waiting_time_hrs > 1.5, -3.0, -0.5)
     
     # 4. Target Delay Y (final_actual_delay_hrs)
-    # Y = 0.6 * hub_waiting_time + 3.0 * weather_severity + 2.5 * traffic_index + tau(X) * locker_rerouted + Noise(std=0.5)
     noise = np.random.normal(0.0, 0.5, n)
     final_actual_delay_hrs = (
         0.6 * hub_waiting_time_hrs 
@@ -115,6 +129,8 @@ def generate_micro_telemetry(n_samples=5000, random_state=42):
         "traffic_index": traffic_index,
         "carrier_id": carrier_ids,
         "priority_tier": priority_tiers,
+        "origin_hub": origin_hubs,
+        "destination_hub": destination_hubs,
         "locker_rerouted": locker_rerouted,
         "final_actual_delay_hrs": final_actual_delay_hrs,
         "lead_time_hrs": lead_time_hrs,
@@ -126,4 +142,4 @@ def generate_micro_telemetry(n_samples=5000, random_state=42):
 if __name__ == "__main__":
     df = generate_micro_telemetry(100)
     print("Telemetry dataframe sample shape:", df.shape)
-    print(df.head(2).to_dict(orient="records"))
+    print("Columns:", df.columns.tolist())

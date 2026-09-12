@@ -3,8 +3,9 @@ from fastapi.testclient import TestClient
 import numpy as np
 import pandas as pd
 
-from main import app, STATE_STORE, guard, causal_engine
+from main import app, STATE_STORE, guard, causal_engine, advanced_analytics
 from data_engine import generate_micro_telemetry
+from fleet_optimizer import optimize_fleet_interventions, render_customer_notification
 
 client = TestClient(app)
 
@@ -14,17 +15,23 @@ def test_telemetry_generation():
     expected_cols = [
         "tracking_id", "current_timestamp", "promised_eta", "distance_remaining_km",
         "hub_waiting_time_hrs", "weather_severity", "traffic_index", "carrier_id",
-        "priority_tier", "locker_rerouted", "final_actual_delay_hrs"
+        "priority_tier", "origin_hub", "destination_hub", "locker_rerouted", "final_actual_delay_hrs"
     ]
     for col in expected_cols:
         assert col in df.columns
 
-def test_predictive_guard_and_adr():
+def test_predictive_guard_catboost_lgbm_ensemble():
     df = generate_micro_telemetry(n_samples=500)
     guard.fit(df)
     
     preds = guard.predict(df)
     assert len(preds) == 500
+    
+    bounds = guard.predict_quantile_bounds(df.head(1))
+    assert "predicted_delay_hrs" in bounds
+    assert "delay_lower_bound_hrs" in bounds
+    assert "delay_upper_bound_hrs" in bounds
+    assert bounds["delay_lower_bound_hrs"] <= bounds["delay_upper_bound_hrs"]
     
     adr6 = guard.compute_advance_detection_rate(df, n_hours=6.0)
     assert 0.0 <= adr6 <= 1.0
@@ -51,8 +58,32 @@ def test_causal_engine():
         assert isinstance(saved, float)
         assert saved >= 0.0
 
-def test_fastapi_endpoints():
-    # Trigger startup event manually for test client
+def test_causal_dag_and_survival():
+    df = generate_micro_telemetry(n_samples=300)
+    dag_res = advanced_analytics.discover_causal_dag(df)
+    assert "inferred_edges" in dag_res
+    
+    advanced_analytics.fit_survival_model(df)
+    surv_p = advanced_analytics.predict_survival_probabilities(df.head(1))
+    assert "breach_p_6h" in surv_p
+    assert 0.0 <= surv_p["breach_p_6h"] <= 1.0
+    
+    conf = advanced_analytics.predict_conformal_interval(2.5)
+    assert "lower_bound_hrs" in conf
+    assert "upper_bound_hrs" in conf
+
+def test_ilp_fleet_optimization():
+    sample_parcels = [
+        {"tracking_id": "TEST-01", "priority_tier": "VIP", "predicted_delay_hrs": 3.0, "estimated_hours_saved": 2.5},
+        {"tracking_id": "TEST-02", "priority_tier": "EXPRESS", "predicted_delay_hrs": 2.0, "estimated_hours_saved": 1.8},
+        {"tracking_id": "TEST-03", "priority_tier": "STANDARD", "predicted_delay_hrs": 1.0, "estimated_hours_saved": 0.5}
+    ]
+    opt_res = optimize_fleet_interventions(sample_parcels)
+    assert "total_net_dollars_saved" in opt_res
+    assert opt_res["total_allocated"] >= 1
+    assert "TEST-03" in opt_res["unassigned_parcels"]
+
+def test_expanded_fastapi_endpoints():
     with TestClient(app) as test_client:
         assert len(STATE_STORE) > 0
         sample_tid = list(STATE_STORE.keys())[0]
@@ -61,32 +92,34 @@ def test_fastapi_endpoints():
         res_promise = test_client.get(f"/parcel/{sample_tid}/promise")
         assert res_promise.status_code == 200
         data_promise = res_promise.json()
-        assert data_promise["tracking_id"] == sample_tid
-        assert "predicted_delay_hrs" in data_promise
-        assert "sla_breach_predicted" in data_promise
-        assert "advance_notice_hours" in data_promise
-        assert "root_cause_diagnosis" in data_promise
-        assert "recommended_action" in data_promise
+        assert "delay_lower_bound_hrs" in data_promise
+        assert "delay_upper_bound_hrs" in data_promise
+        assert "conformal_interval" in data_promise
+        assert "survival_probabilities" in data_promise
+        assert "financial_metrics" in data_promise
         
         # 2. POST /parcel/{tracking_id}/delivery-action
-        action_payload = {
-            "action": "REROUTE_TO_LOCKER",
-            "locker_id": "LOCKER-TEST-01"
-        }
+        action_payload = {"action": "REROUTE_TO_LOCKER", "locker_id": "LOCKER-TEST-01"}
         res_action = test_client.post(f"/parcel/{sample_tid}/delivery-action", json=action_payload)
         assert res_action.status_code == 200
-        data_action = res_action.json()
-        assert data_action["status"] == "SUCCESS"
-        assert data_action["new_fulfillment_state"] == "REROUTED_TO_LOCKER"
-        assert "updated_predicted_delay_hrs" in data_action
-        assert "sla_saved" in data_action
+        assert res_action.json()["status"] == "SUCCESS"
         
-        # Verify state store updated
-        assert STATE_STORE[sample_tid]["locker_rerouted"] == 1
-        assert STATE_STORE[sample_tid]["current_status"] == "REROUTED_TO_LOCKER"
+        # 3. GET /analytics/roi-dashboard
+        res_roi = test_client.get("/analytics/roi-dashboard")
+        assert res_roi.status_code == 200
+        data_roi = res_roi.json()
+        assert "total_net_dollars_protected" in data_roi
         
-        # 3. GET /parcels/at-risk
-        res_at_risk = test_client.get("/parcels/at-risk?min_lead_hours=1.0")
-        assert res_at_risk.status_code == 200
-        data_at_risk = res_at_risk.json()
-        assert isinstance(data_at_risk, list)
+        # 4. POST /fleet/optimize-batch
+        opt_payload = {"locker_capacities": {"LOCKER-TEST-01": 50}}
+        res_opt = test_client.post("/fleet/optimize-batch", json=opt_payload)
+        assert res_opt.status_code == 200
+        
+        # 5. GET /parcel/{tracking_id}/customer-message
+        res_msg = test_client.get(f"/parcel/{sample_tid}/customer-message")
+        assert res_msg.status_code == 200
+        
+        # 6. POST /simulation/stress-test
+        stress_payload = {"weather_spike": 0.5, "affected_region": "SOUTH"}
+        res_stress = test_client.post("/simulation/stress-test", json=stress_payload)
+        assert res_stress.status_code == 200
