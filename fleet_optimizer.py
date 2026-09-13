@@ -98,7 +98,8 @@ def optimize_fleet_interventions(at_risk_parcels: List[Dict[str, Any]], locker_c
         pid = p["tracking_id"]
         assigned_locker = None
         for j in lockers:
-            if pulp.value(x[(pid, j)]) == 1:
+            val = pulp.value(x[(pid, j)])
+            if val is not None and val > 0.9:
                 assigned_locker = j
                 break
                 
