@@ -346,6 +346,7 @@ def get_roi_dashboard():
                 
     return {
         "fleet_size": len(parcels),
+        "at_risk_count": int(sum(pred > 0 and lead_time >= 6.0 for pred, lead_time in zip(preds, df_all["lead_time_hrs"]))),
         "slas_protected_count": slas_protected,
         "total_net_dollars_protected": round(total_net_dollars, 2),
         "advance_detection_rate_6h_pct": round(adr6 * 100, 1),
