@@ -61,7 +61,7 @@ flowchart TD
 ### 1. Why CatBoost + LightGBM Quantile Multi-Model Ensemble?
 - **Handling High-Cardinality Categorical Logistics Features**: Logistics networks depend heavily on categorical metadata such as `carrier_id`, `priority_tier`, `origin_hub`, and `destination_hub`. CatBoost uses Ordered Target Statistics to encode high-cardinality categorical features without target leakage or overfitting.
 - **Asymmetric Risk Bounds via Quantile Regression**: Mean squared error (MSE) regressors output point estimates $\hat{Y} = \mathbb{E}[Y \mid X]$, which treats early and late prediction errors symmetrically. LightGBM Quantile Regressors optimize the pinball loss at $\alpha \in \{0.10, 0.50, 0.90\}$, providing lower bounds ($q_{10}$), median delay ($q_{50}$), and conservative upper risk bounds ($q_{90}$). SLA breach risk is flagged if $q_{90} > 0$.
-- **Meta-Ensemble Stacking**: Combines median LightGBM ($q_{50}$) and CatBoost predictions using a equal-weighted stacking layer ($\hat{Y}_{\text{ensemble}} = 0.5 \hat{Y}_{\text{LGBM\_Q50}} + 0.5 \hat{Y}_{\text{CatBoost}}$), achieving lower variance and higher generalization across diverse hub networks.
+- **Meta-Ensemble Stacking**: Combines median LightGBM ($q_{50}$) and CatBoost predictions using a equal-weighted stacking layer ($\hat{Y}_{\text{ensemble}} = 0.5 \hat{Y}_{\text{LGBM-Q50}} + 0.5 \hat{Y}_{\text{CatBoost}}$), achieving lower variance and higher generalization across diverse hub networks.
 
 ### 2. Why Double Machine Learning (DML) / EconML for CATE Estimation?
 - **The Problem with Naive Regression**: In observational logistics data, packages operating under severe weather or longer remaining distances are far more likely to be rerouted to parcel lockers ($T = 1$) by operational staff. Standard supervised regressors or Ordinary Least Squares (OLS) estimate $\mathbb{E}[Y \mid T=1] - \mathbb{E}[Y \mid T=0]$. This conflates the baseline severity of the environment with the true effect of locker rerouting, causing severe **selection bias** and **confounding**.
@@ -73,7 +73,7 @@ flowchart TD
 
 ### 3. Why Heterogeneous CATE $\tau(X)$ for Parcel Locker Rerouting?
 - **Operational Reality**: Rerouting a package to a parcel locker bypasses sorting hub congestion because lockers receive direct consolidated drop-offs.
-- **Heterogeneity**: If a package is experiencing severe sorting hub delays ($\text{hub\_waiting\_time\_hrs} > 1.5$ hrs), locker rerouting provides high delay reduction ($\tau(X) = -3.0$ hrs). If hub delay is minimal ($\le 1.5$ hrs), rerouting only provides modest benefit ($\tau(X) = -0.5$ hrs). Modeling CATE heterogeneously allows the system to target interventions specifically to high-impact parcels.
+- **Heterogeneity**: If a package is experiencing severe sorting hub delays ($\text{hub waiting time} > 1.5\text{ hrs}$), locker rerouting provides high delay reduction ($\tau(X) = -3.0\text{ hrs}$). If hub delay is minimal ($\le 1.5\text{ hrs}$), rerouting only provides modest benefit ($\tau(X) = -0.5\text{ hrs}$). Modeling CATE heterogeneously allows the system to target interventions specifically to high-impact parcels.
 
 ### 4. Why TreeSHAP for Root Cause Diagnostics?
 - **Global vs. Local Feature Attribution**: Global importance metrics (Mean Decrease Impurity or Permutation Importance) describe overall model behavior across the dataset, but fail to explain *why a specific package is breaching SLA*.
@@ -133,27 +133,27 @@ Parcel Guard loads real shipment metadata from two datasets located in `./data/`
 
 ### 1. CatBoost + LightGBM Quantile Ensemble Equations
 $$\hat{Y}_{\text{CatBoost}} = f_{\text{CatBoost}}(X_{\text{num}}, X_{\text{cat}})$$
-$$\hat{q}_{\alpha} = f_{\text{LGBM\_Quantile}}(X_{\text{num}}; \alpha), \quad \alpha \in \{0.10, 0.50, 0.90\}$$
+$$\hat{q}_{\alpha} = f_{\text{LGBM-Quantile}}(X_{\text{num}}; \alpha), \quad \alpha \in \{0.10, 0.50, 0.90\}$$
 $$\hat{Y}_{\text{predicted}} = 0.50 \cdot \hat{q}_{0.50} + 0.50 \cdot \hat{Y}_{\text{CatBoost}}$$
-$$\text{delay\_lower\_bound\_hrs} = \hat{q}_{0.10}, \quad \text{delay\_upper\_bound\_hrs} = \hat{q}_{0.90}$$
-$$\text{sla\_breach\_predicted} = \mathbb{I}(\text{delay\_upper\_bound\_hrs} > 0)$$
+$$\text{delay lower bound (hrs)} = \hat{q}_{0.10}, \quad \text{delay upper bound (hrs)} = \hat{q}_{0.90}$$
+$$\text{SLA breach predicted} = \mathbb{I}(\text{delay upper bound (hrs)} > 0)$$
 
 ### 2. Confounders & Propensity Score Model
-$$W = [\text{distance\_remaining\_km}, \text{weather\_severity}, \text{traffic\_index}]$$
-$$\text{logit}(W) = 0.005 \cdot \text{distance\_remaining\_km} + 2.0 \cdot \text{weather\_severity} - 1.5$$
-$$e(W) = P(\text{locker\_rerouted} = 1 \mid W) = \frac{1}{1 + \exp(-\text{logit}(W))}$$
+$$W = [\text{distance remaining (km)}, \text{weather severity}, \text{traffic index}]$$
+$$\text{logit}(W) = 0.005 \cdot \text{distance remaining (km)} + 2.0 \cdot \text{weather severity} - 1.5$$
+$$e(W) = P(\text{locker rerouted} = 1 \mid W) = \frac{1}{1 + \exp(-\text{logit}(W))}$$
 
 ### 3. Heterogeneous CATE Treatment Effect $\tau(X)$
-$$\tau(X) = \begin{cases} -3.0 \text{ hours (saves 3.0 hrs)}, & \text{if } \text{hub\_waiting\_time\_hrs} > 1.5 \\ -0.5 \text{ hours (saves 0.5 hrs)}, & \text{otherwise} \end{cases}$$
+$$\tau(X) = \begin{cases} -3.0 \text{ hours (saves 3.0 hrs)}, & \text{if } \text{hub waiting time (hrs)} > 1.5 \\ -0.5 \text{ hours (saves 0.5 hrs)}, & \text{otherwise} \end{cases}$$
 
 ### 4. Target Outcome Delay Equation
-$$Y = 0.6 \cdot \text{hub\_waiting\_time\_hrs} + 3.0 \cdot \text{weather\_severity} + 2.5 \cdot \text{traffic\_index} + \tau(X) \cdot \text{locker\_rerouted} + \epsilon, \quad \epsilon \sim \mathcal{N}(0, 0.5^2)$$
+$$Y = 0.6 \cdot \text{hub waiting time (hrs)} + 3.0 \cdot \text{weather severity} + 2.5 \cdot \text{traffic index} + \tau(X) \cdot \text{locker rerouted} + \epsilon, \quad \epsilon \sim \mathcal{N}(0, 0.5^2)$$
 
 ### 5. 6-Hour Advance Detection Rate ($\text{ADR}_6$)
-$$\text{ADR}_N = \frac{\sum_{i=1}^M \mathbb{I}(\hat{Y}_i > 0 \;\land\; \text{lead\_time\_hrs}_i \ge N \;\land\; Y_i > 0)}{\sum_{i=1}^M \mathbb{I}(Y_i > 0)}$$
+$$\text{ADR}_N = \frac{\sum_{i=1}^M \mathbb{I}(\hat{Y}_i > 0 \;\land\; \text{lead time (hrs)}_i \ge N \;\land\; Y_i > 0)}{\sum_{i=1}^M \mathbb{I}(Y_i > 0)}$$
 
 ### 6. Binary Integer Linear Programming (ILP) Fleet Optimization
-$$\max_{x_{i,j}} \sum_{i=1}^N \sum_{j=1}^K \left( \text{sla\_penalty\_usd}_i - 4.50 \right) x_{i,j}$$
+$$\max_{x_{i,j}} \sum_{i=1}^N \sum_{j=1}^K \left( \text{SLA penalty (USD)}_i - 4.50 \right) x_{i,j}$$
 $$\text{subject to } \sum_{i=1}^N x_{i,j} \le C_j \quad \forall j, \quad \sum_{j=1}^K x_{i,j} \le 1 \quad \forall i, \quad x_{i,j} = 1 \implies \hat{\tau}_i(X) \ge 1.5 \text{ hours}$$
 
 ---
