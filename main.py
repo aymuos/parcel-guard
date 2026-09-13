@@ -405,9 +405,12 @@ def get_customer_message(tracking_id: str):
 def run_simulation_stress_test(request: StressTestRequest):
     global STATE_STORE
     affected_count = 0
+    affected_region = request.affected_region.strip().upper()
     
     for tid, parcel in STATE_STORE.items():
-        if np.random.rand() > 0.3:
+        parcel_region = f'{parcel.get("origin_hub", "")} {parcel.get("destination_hub", "")}'.upper()
+        region_matches = affected_region in {"ALL", "NETWORK"} or affected_region in parcel_region
+        if region_matches and np.random.rand() > 0.3:
             parcel["weather_severity"] = min(1.0, parcel["weather_severity"] + request.weather_spike * 0.5)
             parcel["hub_waiting_time_hrs"] += request.weather_spike * 2.0
             affected_count += 1
@@ -429,6 +432,7 @@ def run_simulation_stress_test(request: StressTestRequest):
     return {
         "simulation_status": "COMPLETED",
         "weather_spike_applied": request.weather_spike,
+        "affected_region": affected_region,
         "affected_parcels_count": affected_count,
         "reallocation_summary": optimization_summary
     }
