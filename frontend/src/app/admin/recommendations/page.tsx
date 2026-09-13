@@ -1,0 +1,2 @@
+import { AppShell, PageHeader } from "@/components/AppShell";
+export default function RecommendationsPage() { return <AppShell><div className="content"><PageHeader eyebrow="Action center" title="Recommendations" description="Turn model insight into controlled interventions." /><div className="panel"><div className="empty-state"><strong>Fleet optimization is available from the backend.</strong><br />A recommendation list endpoint is not exposed yet. Parcel-level interventions can be executed from an at-risk parcel detail page.</div></div></div></AppShell>; }

@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import pandas as pd
@@ -140,6 +141,29 @@ app = FastAPI(
     version="2.1.0",
     lifespan=lifespan
 )
+
+origins = [
+    "http://localhost:3000",      # React/Next.js local server
+    "http://127.0.0.1:5500",     # Live Server extension local server
+    "https://yourfrontend.com",  # Your production website
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,            # Allows specific origins
+    allow_credentials=True,           # Allows cookies / authentication headers
+    allow_methods=["*"],              # Allows all HTTP methods (GET, POST, PUT, DELETE, etc.)
+    allow_headers=["*"],              # Allows all headers
+)
+
+
+@app.get("/")
+def read_root():
+    return {"message": "CORS is configured successfully!"}
+
+@app.get("/health")
+def read_health():
+    return {"status": "Application is up"}
 
 def build_row_df(parcel_data: Dict[str, Any]) -> pd.DataFrame:
     return pd.DataFrame([{
