@@ -33,7 +33,7 @@ flowchart TD
     subgraph Decision & Optimization Engine
         C --> H["Fleet Optimizer\n(fleet_optimizer.py)"]
         H --> H1["SciPy / PuLP Binary ILP Solver"]
-        H --> H2["Deterministic Financial Logic ($25-$100 penalty)"]
+        H --> H2["Deterministic Financial Logic (\$25-\$100 penalty)"]
         H --> H3["SHAP-to-Customer Dispatch Messaging"]
     end
 
@@ -69,7 +69,7 @@ flowchart TD
   1. $\hat{m}_Y(W)$: Predicts outcome $Y$ from confounders $W = [\text{distance}, \text{weather}, \text{traffic}]$.
   2. $\hat{m}_T(W)$: Predicts treatment assignment propensity $T$ from confounders $W$.
   
-  By taking residuals $\tilde{Y} = Y - \hat{m}_Y(W)$ and $\tilde{T} = T - \hat{m}_T(W)$, DML strips away confounding variation, isolating the unconfounded treatment effect $\tau(X)$ on $\tilde{Y} = \tau(X) \cdot \tilde{T} + \nu$. This guarantees root-$N$ rate convergence ($\sqrt{N}$) for the CATE estimator even when using flexible machine learning algorithms like LightGBM for the first stage.
+  By taking residuals $\tilde{Y} = Y - \hat{m}_Y(W)$ and $\tilde{T} = T - \hat{m}_T(W)$, DML strips away confounding variation, isolating the unconfounded treatment effect $\tau(X)$ on $\tilde{Y} = \tau(X) \cdot \tilde{T} + \nu$. This guarantees $\sqrt{N}$-rate convergence for the CATE estimator even when using flexible machine learning algorithms like LightGBM for the first stage.
 
 ### 3. Why Heterogeneous CATE $\tau(X)$ for Parcel Locker Rerouting?
 - **Operational Reality**: Rerouting a package to a parcel locker bypasses sorting hub congestion because lockers receive direct consolidated drop-offs.
@@ -96,10 +96,10 @@ flowchart TD
 - **Flaws of Greedy Sorting**: A naive greedy strategy sorts at-risk parcels by estimated savings and fills lockers sequentially. This fails when physical locker capacities are constrained, higher-priority parcels (`VIP`, `EXPRESS`) compete for slots, or low-impact interventions ($\tau < 1.5$ hrs) waste limited locker capacity.
 - **Global Optimality**: Binary Integer Linear Programming (ILP) formulates the multi-parcel, multi-locker allocation problem as a constrained mathematical optimization problem. It guarantees globally optimal allocation of physical locker slots while enforcing operational constraints and maximizing net financial dollars protected.
 
-### 8. Why 6-Hour Advance Detection Rate ($ADR_6$)?
+### 8. Why 6-Hour Advance Detection Rate ($\text{ADR}_6$)?
 - **Operational Lead Time Window**: Predicting an SLA breach 15 minutes before failure is actionable zero for logistics controllers. A minimum lead time of 6 hours ($N = 6$) is required for dispatch hubs to reroute vehicles or notify locker networks.
-- **Metric Formulation**: $ADR_6$ specifically measures the proportion of actual SLA breaches detected $\ge 6$ hours in advance:
-  $$ADR_6 = \frac{\text{Actual breaches detected } \ge 6 \text{ hours before ETA}}{\text{Total actual SLA breaches}}$$
+- **Metric Formulation**: $\text{ADR}_6$ specifically measures the proportion of actual SLA breaches detected $\ge 6$ hours in advance:
+  $$\text{ADR}_6 = \frac{\text{Actual breaches detected } \ge \text{6 hours before ETA}}{\text{Total actual SLA breaches}}$$
 
 ---
 
@@ -149,8 +149,8 @@ $$\tau(X) = \begin{cases} -3.0 \text{ hours (saves 3.0 hrs)}, & \text{if } \text
 ### 4. Target Outcome Delay Equation
 $$Y = 0.6 \cdot \text{hub\_waiting\_time\_hrs} + 3.0 \cdot \text{weather\_severity} + 2.5 \cdot \text{traffic\_index} + \tau(X) \cdot \text{locker\_rerouted} + \epsilon, \quad \epsilon \sim \mathcal{N}(0, 0.5^2)$$
 
-### 5. 6-Hour Advance Detection Rate ($ADR_6$)
-$$ADR_N = \frac{\sum_{i=1}^M \mathbb{I}(\hat{Y}_i > 0 \;\land\; \text{lead\_time\_hrs}_i \ge N \;\land\; Y_i > 0)}{\sum_{i=1}^M \mathbb{I}(Y_i > 0)}$$
+### 5. 6-Hour Advance Detection Rate ($\text{ADR}_6$)
+$$\text{ADR}_N = \frac{\sum_{i=1}^M \mathbb{I}(\hat{Y}_i > 0 \;\land\; \text{lead\_time\_hrs}_i \ge N \;\land\; Y_i > 0)}{\sum_{i=1}^M \mathbb{I}(Y_i > 0)}$$
 
 ### 6. Binary Integer Linear Programming (ILP) Fleet Optimization
 $$\max_{x_{i,j}} \sum_{i=1}^N \sum_{j=1}^K \left( \text{sla\_penalty\_usd}_i - 4.50 \right) x_{i,j}$$
