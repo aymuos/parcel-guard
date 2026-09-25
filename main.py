@@ -6,6 +6,7 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 from contextlib import asynccontextmanager
+import os
 
 from data_engine import generate_micro_telemetry
 from models import PredictiveGuard, FEATURE_COLS, CATEGORICAL_COLS
@@ -143,17 +144,27 @@ app = FastAPI(
 )
 
 origins = [
-    "http://localhost:3000",      # React/Next.js local server
-    "http://127.0.0.1:5500",     # Live Server extension local server
-    "https://yourfrontend.com",  # Your production website
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5500",
+    "http://192.168.1.36:3000"
 ]
+origins.extend(origin.strip().rstrip("/") for origin in os.getenv("FRONTEND_ORIGINS", "").split(",") if origin.strip())
+
+# Permit browser clients from private LAN addresses during local deployment.
+# Set FRONTEND_ORIGIN_REGEX to a narrower expression for a production deployment.
+origin_regex = os.getenv(
+    "FRONTEND_ORIGIN_REGEX",
+    r"https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?",
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,            # Allows specific origins
-    allow_credentials=True,           # Allows cookies / authentication headers
-    allow_methods=["*"],              # Allows all HTTP methods (GET, POST, PUT, DELETE, etc.)
-    allow_headers=["*"],              # Allows all headers
+    allow_origins=origins,
+    allow_origin_regex=origin_regex,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -439,4 +450,4 @@ def run_simulation_stress_test(request: StressTestRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

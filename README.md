@@ -105,6 +105,27 @@ flowchart TD
 
 ## Dataset Ingestion & Hybrid Telemetry Engine
 
+## Run Across the Local Network
+
+The API and frontend are configured to listen on all network interfaces for local development.
+
+1. Find the host machine's LAN IPv4 address with `ipconfig`.
+2. Start the backend from this directory:
+
+```powershell
+python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+3. Start the frontend from `frontend`:
+
+```powershell
+npm run dev
+```
+
+4. From another device on the same network, open `http://<LAN_IP>:3000`. The frontend automatically calls `http://<LAN_IP>:8000` unless `NEXT_PUBLIC_API_BASE_URL` is set.
+
+Windows Firewall must allow inbound TCP traffic on ports `3000` and `8000` for the selected network profile.
+
 Parcel Guard loads real shipment metadata from two datasets located in `./data/`:
 1. **DataCo Supply Chain Dataset** (`data/DataCoSupplyChainDataset.csv`) — Ingests real order IDs, order purchase/shipping timestamps, customer locations, and shipping modes.
 2. **Olist Brazilian E-Commerce Dataset** (`data/Brazilian E-Commerce Public Dataset by Olist.csv`) — Ingests order timestamps, customer location zip codes, and promised delivery windows.
